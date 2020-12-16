@@ -10,8 +10,10 @@
 source('R/download_matrices.R')
 source('R/load_config.R')
 source('R/contact_matrix_fix.R')
+source('R/plot_mean_number_contacts.R')
 source('R/plot_social_contact_matrix.R')
 source('R/survey_data_description.R')
+source('R/config_comix.R')
 
 # example
 #contact_matrix(polymod, countries = "United Kingdom", age.limits = c(0, 1, 5, 15))
@@ -20,12 +22,14 @@ run_social_contact_analysis <- function(country,daytype,touch,duration,gender,
                                         cnt_location,cnt_matrix_features,age_breaks_text,
                                         max_part_weight,
                                         bool_transmission_param,age_susceptibility_text,age_infectiousness_text,
-                                        cnt_reduction){
+                                        cnt_reduction,
+                                        wave){
   
   # get social contact matrix using all features, without interventions
   cnt_matrix_ui <- get_contact_matrix(country,daytype,touch,duration,gender,
                                       cnt_location,cnt_matrix_features,age_breaks_text,
-                                      max_part_weight = max_part_weight)
+                                      max_part_weight = max_part_weight,
+                                      wave)
   
   # CLI
   fct_out <- cnt_matrix_ui
@@ -33,18 +37,25 @@ run_social_contact_analysis <- function(country,daytype,touch,duration,gender,
   # create option to add notes
   fct_out$notes <- NULL
   
+  # if matrix contains NA's => reciproity is not possible ==>> add warning
+  if(any(is.na(cnt_matrix_ui$matrix)) & 
+     opt_matrix_features[[1]]  %in% cnt_matrix_features){
+    fct_out$notes <- "Contact matrix contains NA, reciprocity is not possible."
+  }
+  
   # include physical distancing?
   bool_physical_distancing <- any(cnt_reduction!=0)
   if(bool_physical_distancing){
     if(any(is.na(cnt_matrix_ui$matrix))){
-      fct_out$notes <- "Contact matrix contains NA, no further analysis possible."
+      fct_out$notes <- c(fct_out$notes,"Contact matrix contains NA, no distancing analysis possible.")
     } else {
       # get location specific contact matrix (no intervention)
       matrix_loc <- get_location_matrices(country,daytype,touch,duration,gender,
                                           cnt_location,
                                           cnt_matrix_features,
                                           age_breaks_text,
-                                          max_part_weight)
+                                          max_part_weight,
+                                          wave)
 
       # unlist contact reduction parameter
       cnt_reduction_df <- unlist(cnt_reduction)
@@ -132,6 +143,7 @@ run_social_contact_analysis <- function(country,daytype,touch,duration,gender,
                           contact_features = paste(cnt_matrix_features,collapse=', '),
                           age_breaks = age_breaks_text,
                           max_part_weight = max_part_weight,
+                          wave = wave,
                           row.names=NULL)
   
   
@@ -156,7 +168,7 @@ run_social_contact_analysis <- function(country,daytype,touch,duration,gender,
 ## MAIN FUNCTION ####
 get_contact_matrix <- function(country,daytype,touch,duration,gender,
                                cnt_location,cnt_matrix_features,age_breaks_text,
-                               max_part_weight){
+                               max_part_weight,wave){
   
   # parse age intervals
   age_breaks_num <- parse_age_values(age_breaks_text,bool_unique = TRUE)
@@ -169,7 +181,10 @@ get_contact_matrix <- function(country,daytype,touch,duration,gender,
   bool_reciprocal      <- opt_matrix_features[[1]]  %in% cnt_matrix_features
   bool_weigh_age_group <- opt_matrix_features[[2]]  %in% cnt_matrix_features
   bool_weigh_dayofweek <- opt_matrix_features[[3]]  %in% cnt_matrix_features
-  bool_suppl_professional_cnt <- opt_matrix_features[[4]]  %in% cnt_matrix_features
+  bool_age_range       <- opt_matrix_features[[4]]  %in% cnt_matrix_features
+  bool_age_missing     <- opt_matrix_features[[5]]  %in% cnt_matrix_features
+  bool_suppl_professional_cnt <- opt_matrix_features[[6]]  %in% cnt_matrix_features
+  bool_hhmatrix_selection    <- opt_matrix_features[[7]]  %in% cnt_matrix_features
   
   # get specific social_mixr survey object
   survey_object <- get_survey_object(country      = country,
@@ -178,8 +193,10 @@ get_contact_matrix <- function(country,daytype,touch,duration,gender,
                                      duration     = duration,
                                      gender       = gender,
                                      cnt_location = cnt_location,
-                                     bool_reciprocal  = bool_reciprocal,
-                                     bool_suppl_professional_cnt =  bool_suppl_professional_cnt)
+                                     bool_reciprocal   = bool_reciprocal,
+                                     bool_suppl_professional_cnt =  bool_suppl_professional_cnt,
+                                     bool_hhmatrix_selection = bool_hhmatrix_selection,
+                                     wave         = wave)
   
   if(nrow(survey_object$participants)==0){
     return(list(matrix=NA,
@@ -195,6 +212,9 @@ get_contact_matrix <- function(country,daytype,touch,duration,gender,
     )
   }
   
+  # (re)set rng seed (if ages are sampled from the reported range)
+  set.seed(rng_seed)
+  
   # run social_mixr function
   matrix_out <- contact_matrix(survey          = survey_object, 
                                age.limits      = age_breaks_num,
@@ -202,13 +222,15 @@ get_contact_matrix <- function(country,daytype,touch,duration,gender,
                                weigh.age.group = bool_weigh_age_group,
                                weigh.dayofweek = bool_weigh_dayofweek,
                                max.part.weight = max_part_weight,
+                               estimated.contact.age = ifelse(bool_age_range,'sample','mean'),
+                               missing.contact.age = ifelse(bool_age_missing,'remove','ignore'),
                                quiet           = TRUE)
   
   
   # add per capita contact rate (if demography data)
   if('demography' %in% names(matrix_out) && !any(is.na(matrix_out$matrix))){
     num_age_groups <- nrow(matrix_out$demography)
-    pop_matrix <- matrix(rep(matrix_out$demography$population,num_age_groups),ncol=num_age_groups,byrow = T)
+    pop_matrix     <- matrix(rep(matrix_out$demography$population,num_age_groups),ncol=num_age_groups,byrow = T)
     matrix_out$matrix_per_capita <- matrix_out$matrix / pop_matrix
   }
   
@@ -219,6 +241,22 @@ get_contact_matrix <- function(country,daytype,touch,duration,gender,
     matrix_out$weights <- tmp
     
   }
+  
+  # ## add date
+  dates_str <- paste0(survey_object$participants$year,'-',
+                      survey_object$participants$month,'-',
+                      survey_object$participants$day)
+  dates_str <- dates_str[!grepl('NA',dates_str)]
+  
+  if(length(dates_str)==0){
+    dates_all <- unique(survey_object$participants$year)
+    matrix_out$survey_period <- paste(c('Survey period: ', paste(dates_all, collapse=', ')),collapse=' ')
+  } else{
+    dates_all <- as.Date(dates_str)
+    matrix_out$survey_period <- paste(c('From', paste(range(dates_all), collapse=' to ')),collapse=' ')
+  }
+  
+
   # return
   matrix_out
 }
@@ -232,7 +270,10 @@ get_survey_object <- function(country,
                               cnt_location,
                               bool_reciprocal,
                               bool_suppl_professional_cnt,
+                              bool_hhmatrix_selection,
                               missing.contact.age = "remove",  # adopted from socialmixr package
+                              #missing.contact.age = "keep",  # adopted from socialmixr package
+                              wave,
                               quiet = FALSE){
   
   # select dataset filename and load #####
@@ -248,26 +289,6 @@ get_survey_object <- function(country,
     bool_country <- (data_part$country == sel_dataset$country)
     data_part    <- data_part[bool_country,]
     data_cnt     <- data_cnt[data_cnt$part_id %in% data_part$part_id,]
-  }
-  
-  # missing contact age ####
-  # remove participants with missing contact age
-  if (missing.contact.age == "remove") {
-    if (!quiet)
-    {
-      message("Removing participants that have contacts without age information. ",
-              "To change this behaviour, set the 'missing.contact.age' option")
-    }
-
-  cnt_ages            <- cbind(data_cnt$cnt_age_exact, data_cnt$cnt_age_min, data_cnt$cnt_age_est_max)
-  bool_missing_age    <- rowSums(is.na(cnt_ages)) == ncol(cnt_ages)
-  part_id_missing_age <- unique(data_cnt$part_id[bool_missing_age])
-
-  data_part <- data_part[!data_part$part_id %in% part_id_missing_age,]
-  data_cnt  <- data_cnt[!data_cnt$part_id %in% part_id_missing_age,]
-
-  } else {
-    message("The specified missing.contact.age unknown")
   }
   
   # select type of day ####
@@ -296,6 +317,12 @@ get_survey_object <- function(country,
       data_part$holiday <- data_part$date %in% country_holiday_data$date
     }
     
+    # check if holiday is a boolean... if not, try to convert and throw warning
+    if(typeof(data_part$holiday) != 'logical'){
+      warning("holiday variable is not a 'logical', try to convert binary 0/1 to FALSE/TRUE")
+      data_part$holiday <- data_part$holiday == 1
+    }
+    
     if(daytype == opt_day_type[[4]]){
       # if(!any(data_part$is_holiday)){ # if no holiday period data
       #   print("NO HOLIDAY DATA... USE REGULAR PERIOD DATA")
@@ -311,8 +338,7 @@ get_survey_object <- function(country,
   
   # select contact duration ####
   if(duration != opt_duration[[1]]){
-    print(duration)
-    
+    #print(duration)
     duration_code <- which(opt_duration == duration)-1
     
     if(duration %in% names(opt_duration[2:3]) ){
@@ -329,7 +355,7 @@ get_survey_object <- function(country,
     touch_code    <- which(opt_touch == touch)-1
     bool_touching <- !is.na(data_cnt$phys_contact) & data_cnt$phys_contact == touch_code
     data_cnt      <- data_cnt[bool_touching,]
-    print(touch)
+    #print(touch)
   }
   
   # select gender ####
@@ -365,6 +391,21 @@ get_survey_object <- function(country,
     }
   }
   
+  ## select wave (optional) ----
+  if(wave != opt_waves[[1]]){
+    if(!is.null(data_part$wave) & wave %in% data_part$wave){
+      # print(table(data_part$wave))
+      # print(table(data_part$wave == wave))
+      
+      bool_part_wave <- data_part$wave == wave
+      data_part <- data_part[bool_part_wave,]
+      
+      bool_cnt_wave <- data_cnt$part_id %in%  data_part$part_id
+      data_cnt  <- data_cnt[bool_cnt_wave,]
+      # print(paste('select wave', wave))
+      # print(table(data_part$wave))
+    }
+  }
   
   #__________________________________________________________________________
   # adjust location data: missing and multiple locations ####
@@ -395,6 +436,14 @@ get_survey_object <- function(country,
   }
 
   #__________________________________________________________________________
+  
+  # household members: get matrix with only household members? ####
+  if('is_hh_member' %in% names(data_cnt) && !is.na(bool_hhmatrix_selection) && 
+     bool_hhmatrix_selection == TRUE){
+    flag_cnt_adapt                       <- data_cnt$cnt_home == 1 & data_cnt$is_hh_member == FALSE
+    data_cnt$cnt_home[flag_cnt_adapt]    <- 0
+    data_cnt$cnt_leisure[flag_cnt_adapt] <- 1
+  }
   
   #select location ####
   if(length(cnt_location)==0){
@@ -575,7 +624,8 @@ get_location_matrices <- function(country,daytype,touch,duration,gender,
                                   cnt_location,
                                   cnt_matrix_features,
                                   age_breaks_text,
-                                  max_part_weight){
+                                  max_part_weight,
+                                  wave){
   
   
   # location specific ==> NOT reciprocal
@@ -589,7 +639,8 @@ get_location_matrices <- function(country,daytype,touch,duration,gender,
                                                   cnt_location = cnt_location[i_loc],
                                                   sel_cnt_matrix_features,
                                                   age_breaks_text,
-                                                  max_part_weight))
+                                                  max_part_weight,
+                                                  wave = wave))
   }
   
   # add location names

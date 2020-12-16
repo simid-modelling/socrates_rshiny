@@ -13,6 +13,44 @@ source('R/socrates_main.R')
 # Define server logic required to plot various output
 shinyServer(function(input, output, session) {
   
+  ## CoMix: hide some tabs
+  if(bool_is_comix_ui){
+    hideTab(inputId = "distancing_transmission", target = "Distancing")
+    hideTab(inputId = "distancing_transmission", target = "Transmission")
+  } else{
+    hideTab(inputId = "tabs_results", target = "About CoMix")    
+  }
+
+  ## Wave input ----
+  ## list to store reactive values
+  values <- reactiveValues()
+
+  # The dynamic input definition
+  output$dynamicWaveInput <- renderUI({
+    
+    # This input exists if the `country` survey contains wave info
+    if (opt_country_admin$has_waves[opt_country_admin$name == input$country]) {
+      selectInput(inputId = 'wave_dynamic',
+                  label   = 'Wave',
+                  choices = opt_waves)
+    } else {
+      return(NULL)
+    }
+    
+  })
+  
+  ## this bit fixes the issue
+  ## force the dynamic dynamicWaveInput to reset if the country survey has no waves
+  observe({
+    if(opt_country_admin$has_waves[opt_country_admin$name == input$country]) {
+      values$w_dynamic <- input$wave_dynamic
+    } else {
+      values$w_dynamic <- opt_waves[[1]]
+    }
+  })
+  
+  
+  # Setup ####
   # create memory variable for the transmission param sliders
   bool_update <- reactiveValues(age_breaks_text = '')
   
@@ -22,6 +60,12 @@ shinyServer(function(input, output, session) {
   })
   outputOptions(output, "panelStatus", suspendWhenHidden = FALSE)
   
+  # create bool to show the 'home member' checkbox
+  output$panelStatusHome <- reactive({
+    opt_country_admin$has_hhmember_cnt_data[opt_country_admin$name == as.character(input$country)]
+  })
+  outputOptions(output, "panelStatusHome", suspendWhenHidden = FALSE)
+
   # Update UI panel(s) ####
   observe({
   
@@ -30,6 +74,14 @@ shinyServer(function(input, output, session) {
     show_spc_panel <- opt_country_admin$has_suppl_professional_cnt_data[opt_country_admin$name == as.character(input$country)]
     if(!show_spc_panel){
       updateCheckboxInput(session,"bool_spc", value = TRUE)
+    }
+    
+    # if the HH-member checkbox is not shown (nor used), set as "FALSE"
+    # MESSAGE ==>> "selection is never excluded if the checkbox is not shown"
+    show_hhmember_panel <- opt_country_admin$has_hhmember_cnt_data[opt_country_admin$name == as.character(input$country)]
+    print(show_hhmember_panel)
+    if(!show_hhmember_panel){
+      updateCheckboxInput(session,"bool_hhmember_selection", value = FALSE)
     }
     
     # Update whether the location-specific checkboxes are displayed
@@ -59,6 +111,27 @@ shinyServer(function(input, output, session) {
       }
     } else {
       updateSelectInput(session,"daytype", choices = opt_day_type[1])
+    }
+    
+    # update contact duration options
+    if(opt_country_admin$has_cnt_duration_data[flag_country]){
+      updateSelectInput(session,"duration", choices = opt_duration, selected = input$duration)
+    } else{
+      updateSelectInput(session,"duration", choices = opt_duration[1], selected = opt_duration[1])
+    }
+    
+    # update contact intensity options
+    if(opt_country_admin$has_cnt_touch_data[flag_country]){
+      updateSelectInput(session,"touch", choices = opt_touch, selected = input$touch)
+    } else{
+      updateSelectInput(session,"touch", choices = opt_touch[1], selected = opt_touch[1])
+    }
+    
+    # update wave  options
+    if(opt_country_admin$has_waves[flag_country]){
+      updateSelectInput(session,"wave_dynamic", choices = opt_waves[1:(opt_country_admin$num_waves[flag_country]+1)], selected = input$wave_dynamic)
+    } else {
+      updateSelectInput(session,"wave_dynamic", choices = opt_waves[1], selected = opt_waves[1])
     }
     
     #update transmission sliders, if the age groups have changed
@@ -97,22 +170,24 @@ shinyServer(function(input, output, session) {
     
   }) # end: observe
  
-  
-  
-  ## UPDATE CONTENT ####
+  ## Update results ####
   observe({
 
     progress <- Progress$new(session, min=1, max=15)
     on.exit(progress$close())
     
-    progress$set(message = 'Calculation in progress',
-                 detail = 'This may take a while...')
+    progress$set(message = 'In progress...',
+                 detail = 'Please wait.',
+                )
     
     # combine general options
-    features_select <- c(input$bool_reciprocal,
+    features_select <- c(ifelse(is.null(input$bool_reciprocal),FALSE,input$bool_reciprocal),
                         input$bool_weigh_age,
                         input$bool_weigh_week,
-                        input$bool_spc)
+                        input$bool_age_range,
+                        input$bool_age_missing,
+                        input$bool_spc,
+                        input$bool_hhmember_selection)
 
     # parse transmission parameters
     age_susceptibility_text    <- parse_input_list(input,'s_susceptibility')
@@ -127,6 +202,9 @@ shinyServer(function(input, output, session) {
                                 Leisure    = input$cnt_reduction_leisure/100,
                                 Otherplace = input$cnt_reduction_otherplace/100)
 
+    # fix for wave
+    if(is.null(values$w_dynamic)) values$w_dynamic <- opt_waves[[1]]
+    
     # run social contact analysis
     out <- run_social_contact_analysis(country      = input$country,
                                        daytype      = input$daytype,
@@ -140,7 +218,8 @@ shinyServer(function(input, output, session) {
                                        bool_transmission_param = input$bool_transmission_param,
                                        age_susceptibility_text = age_susceptibility_text,
                                        age_infectiousness_text = age_infectiousness_text,
-                                       cnt_reduction           = cnt_reduction)
+                                       cnt_reduction           = cnt_reduction,
+                                       wave                    = values$w_dynamic)
     
     # plot social contact matrix
     output$plot_cnt_matrix <- renderPlot({
@@ -152,7 +231,15 @@ shinyServer(function(input, output, session) {
       
       if('matrix_per_capita' %in% names(out)){
         plot_cnt_matrix(out$matrix_per_capita, 'per capita')
+      } else{
+        plot(0,col=0,axes=F,xlab='',ylab='')
+        text(1,0,"MISSING DATA ISSUE...\nUNABLE TO PLOT THE MATRIX")    
       }
+    })
+    
+    # plot mean number of social contacts
+    output$plot_mean_number_contacts <- renderPlot({
+      plot_mean_number_contacts(out$matrix)
     })
     
     # print results
@@ -189,14 +276,15 @@ shinyServer(function(input, output, session) {
                                     duration     = input$duration,
                                     gender       = input$gender,
                                     cnt_location = input$cnt_location,
-                                    cnt_matrix_features = cnt_matrix_features[features_select],
+                                    cnt_matrix_features = opt_matrix_features[features_select],
                                     age_breaks_text     = input$age_breaks_text,
                                     max_part_weight     = max_part_weight,
                                     bool_transmission_param = input$bool_transmission_param,
                                     age_susceptibility_text = age_susceptibility_text,
                                     age_infectiousness_text = age_infectiousness_text,
                                     cnt_reduction           = cnt_reduction,
-                                    filename = file)
+                                    wave                    = values$w_dynamic,
+                                    filename                = file)
       }
     )
     
@@ -205,6 +293,12 @@ shinyServer(function(input, output, session) {
       tagList("More info:", url)
     })
     
+    # create url link
+    output$project_website_data <- renderUI({
+      tagList("More info on the social contact data initiative 
+              and links to the ZENODO repositories are provided at", url,". Info about the Supplementary Professional Contacts 
+              (SPC) for the French dataset is provided ",url_doc_spc)
+    })
     # add social contact data info
     output$social_contact_data <- renderDataTable({
     data_table_description
@@ -239,7 +333,19 @@ shinyServer(function(input, output, session) {
   })
   
   
+  # create url link
+  output$socrates_website <- renderUI({
+    tagList(url_socrates)
+  })
   
+  # create url link
+  output$socrates_website_data <- renderUI({
+    tagList("The goal of the CoMix project is to measure social distancing during the COVID-19 pandemic. This tool is part of the", url_socrates)
+  })
   
+  # create url link
+  output$socrates_website_comix <- renderUI({
+    tagList("Also have look at", url_socrates_comix)
+  })
   
 })

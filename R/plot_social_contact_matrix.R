@@ -1,7 +1,7 @@
 #___________________________________________________________________________
 # This file is part of the SOcial Contact RATES (SOCRATES) modelling project
 # 
-# => LOAD AND SELECT SOCIAL CONTACT SURVEY DATA
+# => PLOT SOCIAL CONTACT MATRICES
 #
 #  Copyright 2020, SIMID, UNIVERSITY OF ANTWERP & HASSELT UNIVERSITY
 #___________________________________________________________________________
@@ -33,7 +33,7 @@ plot_cnt_matrix <- function(mij,plot_title_extra = ''){
   axis(1, at=plt_ticks, labels = c(colnames(mij)),cex.axis=0.9,tick = FALSE)
   
   # format results (rounding/scientific)
-  if(any(mij>1)){
+  if(any(max(mij,na.rm=T)>1)){
     mij <- round(mij,digits=format_num_digits)
   } else{
     mij <- format(mij,digits = format_num_digits)
