@@ -1,17 +1,18 @@
 #___________________________________________________________________________
 # This file is part of the SOcial Contact RATES (SOCRATES) modelling project
 # 
-# => RUN THE SOCRATES FUNCTIONS LOCALLY
+# A. Run SOCRATES functions via R(studio)
+# B. Run a remote SOCRATES UI
 #
 #  Copyright 2020, SIMID, UNIVERSITY OF ANTWERP & HASSELT UNIVERSITY
 #___________________________________________________________________________
 
 ################################################################### #
-# run SOCRATES via R(studio) ----
+# Run SOCRATES functions via R(studio) ----
 ################################################################### #
+
 # note: set your work directory to the main SOCRATES repo folder to 
 #       enable the relative file paths
-
 # setwd('path/to/SOCRATES/main')
 
 # clear workspace
@@ -19,7 +20,7 @@ rm(list=ls())
 
 # load functions and options
 source('R/socrates_main.R')
-source('R/load_config.R')
+source('R/load_config_base.R') # re-load settings (without CoMix-based selection)
 
 # use the UI defined lists
 opt_country
@@ -41,7 +42,7 @@ input <- list(age_breaks_num = c(0,18),
                 bool_reciprocal = TRUE,
                 bool_suppl_professional_cnt = TRUE,
                 wave = 3,
-                cnt_reduction = data.frame(Transport=0.5,Leisure=1,Otherplace=0.9)
+                cnt_reduction = data.frame(Transport=0,Leisure=0,Otherplace=0) # no reductions for this example
   )
   
 # include age breaks as text (required for SOCRATES)
@@ -87,7 +88,8 @@ matrix_out <- contact_matrix(survey_obj,
                              symmetric  = TRUE,
                              quiet      = TRUE,
                              weigh.dayofweek = TRUE,
-                             weigh.age.group = TRUE)
+                             weigh.age       = TRUE,
+                             weight.threshold = weight_threshold)
 names(matrix_out)
 
 # inspect contact matrix using internal function(s)  
@@ -105,7 +107,7 @@ socrates_out <- run_social_contact_analysis(country,
                                             cnt_location,
                                             cnt_matrix_features,
                                             age_breaks_text,
-                                            max_part_weight,
+                                            weight_threshold,
                                             bool_transmission_param,
                                             age_susceptibility_text,
                                             age_infectiousness_text,
@@ -120,7 +122,7 @@ plot_cnt_matrix(socrates_out$matrix)
 
 
 ################################################################### #
-# run the SOCRATES UI locally ----
+# B. Run a remote SOCRATES UI  ----
 ################################################################### #
 
 if(0==1){ # never executed...

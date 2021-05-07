@@ -8,19 +8,18 @@
 
 # load packages and help functions
 source('R/download_matrices.R')
-source('R/load_config.R')
+source('R/load_config_base.R')
+source('R/load_config_comix.R')
 source('R/contact_matrix_fix.R')
 source('R/plot_mean_number_contacts.R')
 source('R/plot_social_contact_matrix.R')
-source('R/survey_data_description.R')
-source('R/config_comix.R')
 
 # example
 #contact_matrix(polymod, countries = "United Kingdom", age.limits = c(0, 1, 5, 15))
 
 run_social_contact_analysis <- function(country,daytype,touch,duration,gender,
                                         cnt_location,cnt_matrix_features,age_breaks_text,
-                                        max_part_weight,
+                                        weight_threshold,
                                         bool_transmission_param,age_susceptibility_text,age_infectiousness_text,
                                         cnt_reduction,
                                         wave){
@@ -28,7 +27,7 @@ run_social_contact_analysis <- function(country,daytype,touch,duration,gender,
   # get social contact matrix using all features, without interventions
   cnt_matrix_ui <- get_contact_matrix(country,daytype,touch,duration,gender,
                                       cnt_location,cnt_matrix_features,age_breaks_text,
-                                      max_part_weight = max_part_weight,
+                                      weight_threshold = weight_threshold,
                                       wave)
   
   # CLI
@@ -54,7 +53,7 @@ run_social_contact_analysis <- function(country,daytype,touch,duration,gender,
                                           cnt_location,
                                           cnt_matrix_features,
                                           age_breaks_text,
-                                          max_part_weight,
+                                          weight_threshold,
                                           wave)
 
       # unlist contact reduction parameter
@@ -142,7 +141,7 @@ run_social_contact_analysis <- function(country,daytype,touch,duration,gender,
                           contact_locations = paste(cnt_location,collapse=', '),
                           contact_features = paste(cnt_matrix_features,collapse=', '),
                           age_breaks = age_breaks_text,
-                          max_part_weight = max_part_weight,
+                          weight_threshold = weight_threshold,
                           wave = wave,
                           row.names=NULL)
   
@@ -168,7 +167,7 @@ run_social_contact_analysis <- function(country,daytype,touch,duration,gender,
 ## MAIN FUNCTION ####
 get_contact_matrix <- function(country,daytype,touch,duration,gender,
                                cnt_location,cnt_matrix_features,age_breaks_text,
-                               max_part_weight,wave){
+                               weight_threshold,wave){
   
   # parse age intervals
   age_breaks_num <- parse_age_values(age_breaks_text,bool_unique = TRUE)
@@ -179,7 +178,7 @@ get_contact_matrix <- function(country,daytype,touch,duration,gender,
   }
   
   bool_reciprocal      <- opt_matrix_features[[1]]  %in% cnt_matrix_features
-  bool_weigh_age_group <- opt_matrix_features[[2]]  %in% cnt_matrix_features
+  bool_weigh_age       <- opt_matrix_features[[2]]  %in% cnt_matrix_features
   bool_weigh_dayofweek <- opt_matrix_features[[3]]  %in% cnt_matrix_features
   bool_age_range       <- opt_matrix_features[[4]]  %in% cnt_matrix_features
   bool_age_missing     <- opt_matrix_features[[5]]  %in% cnt_matrix_features
@@ -219,11 +218,13 @@ get_contact_matrix <- function(country,daytype,touch,duration,gender,
   matrix_out <- contact_matrix(survey          = survey_object, 
                                age.limits      = age_breaks_num,
                                symmetric       = bool_reciprocal,
-                               weigh.age.group = bool_weigh_age_group,
+                               weigh.age       = bool_weigh_age,
                                weigh.dayofweek = bool_weigh_dayofweek,
-                               max.part.weight = max_part_weight,
+                               weight.threshold = weight_threshold,
                                estimated.contact.age = ifelse(bool_age_range,'sample','mean'),
                                missing.contact.age = ifelse(bool_age_missing,'remove','ignore'),
+                               return.part.weights = TRUE,
+                               #return.demography   = TRUE,
                                quiet           = TRUE)
   
   
@@ -624,7 +625,7 @@ get_location_matrices <- function(country,daytype,touch,duration,gender,
                                   cnt_location,
                                   cnt_matrix_features,
                                   age_breaks_text,
-                                  max_part_weight,
+                                  weight_threshold,
                                   wave){
   
   
@@ -639,7 +640,7 @@ get_location_matrices <- function(country,daytype,touch,duration,gender,
                                                   cnt_location = cnt_location[i_loc],
                                                   sel_cnt_matrix_features,
                                                   age_breaks_text,
-                                                  max_part_weight,
+                                                  weight_threshold,
                                                   wave = wave))
   }
   

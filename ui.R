@@ -9,12 +9,8 @@
 # library('shiny')
 # runGitHub('socrates_rshiny','lwillem')
 
-# clear workspace
-rm(list=ls(all=TRUE))
-
-# load all functions and packages
-library('shiny')
-source('R/socrates_main.R')
+# # load all functions and packages
+# this is done automatically when running the App
 
 # Define UI for social contact application
 shinyUI(pageWithSidebar(
@@ -86,9 +82,15 @@ shinyUI(pageWithSidebar(
                                               choices = opt_location,
                                               selected = opt_location))
                         ),
-                tabPanel("Missing data", 
+                tabPanel("Options", 
                          checkboxInput("bool_age_range", "Age range: sample at random",value = TRUE),
-                         checkboxInput("bool_age_missing", "Missing contact age: remove participant",value = FALSE)
+                         checkboxInput("bool_age_missing", "Missing contact age: remove participant",value = FALSE),
+                         checkboxInput("bool_matrix_limit", "Specify the color scale of the social contact matrix?",value = FALSE),
+                         conditionalPanel(condition = "input.bool_matrix_limit == true",
+                                          numericInput(inputId="ui_scale_max",
+                                                       label = "Color scale upper limit (≥1)",
+                                                       value = NA,
+                                                       min   = 1))
                 ),
                 tabPanel("Distancing", checkboxInput("bool_physical_distancing","Include physical distancing"),
                                        conditionalPanel(
@@ -146,8 +148,7 @@ shinyUI(pageWithSidebar(
                          helpText('Brief summary of participant data:'),
                          dataTableOutput('table_participants')),
                 tabPanel("Weights",     
-                         helpText('Based on the selected options, we calculate participant weights to account for age and the number of observations during week (5/7) and weekend (2/7) days. 
-                         The United Nation’s World Population Prospects are used as reference. Weights are constraint to a maximum of 3 to limit the influence of single participants.'),
+                         uiOutput("project_website_weights"),
                          dataTableOutput('table_weights')),
                 tabPanel("Data sets",
                          uiOutput("project_website_data"),

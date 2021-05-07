@@ -7,8 +7,7 @@
 #___________________________________________________________________________
 
 # load all functions and packages
-library('shiny')
-source('R/socrates_main.R')
+# this is done automatically when running the App
 
 # Define server logic required to plot various output
 shinyServer(function(input, output, session) {
@@ -214,7 +213,7 @@ shinyServer(function(input, output, session) {
                                        cnt_location = input$cnt_location,
                                        cnt_matrix_features = opt_matrix_features[features_select],
                                        age_breaks_text     = input$age_breaks_text,
-                                       max_part_weight     = max_part_weight,
+                                       weight_threshold     = weight_threshold,
                                        bool_transmission_param = input$bool_transmission_param,
                                        age_susceptibility_text = age_susceptibility_text,
                                        age_infectiousness_text = age_infectiousness_text,
@@ -223,14 +222,15 @@ shinyServer(function(input, output, session) {
     
     # plot social contact matrix
     output$plot_cnt_matrix <- renderPlot({
-      plot_cnt_matrix(out$matrix)
+      
+      scale_max <- ifelse(input$bool_matrix_limit == TRUE ,input$ui_scale_max,NA) 
+      plot_cnt_matrix(out$matrix,scale_max=scale_max)
     })
     
     # plot social contact matrix per capita
     output$plot_cnt_matrix_per_capita <- renderPlot({
-      
       if('matrix_per_capita' %in% names(out)){
-        plot_cnt_matrix(out$matrix_per_capita, 'per capita')
+        plot_cnt_matrix(mij = out$matrix_per_capita, 'per capita')
       } else{
         plot(0,col=0,axes=F,xlab='',ylab='')
         text(1,0,"MISSING DATA ISSUE...\nUNABLE TO PLOT THE MATRIX")    
@@ -239,13 +239,13 @@ shinyServer(function(input, output, session) {
     
     # plot mean number of social contacts
     output$plot_mean_number_contacts <- renderPlot({
-      plot_mean_number_contacts(out$matrix)
+      plot_mean_number_contacts(mij = out$matrix)
     })
     
     # print results
     output$social_contact_analysis <- renderPrint({
       # exclude results with separate tab
-      list_exclude <- c('weights','participants','meta_data')
+      list_exclude <- c('weights','participants','participants.weights','meta_data')
       out[!names(out) %in% list_exclude]
     })
     
@@ -278,7 +278,7 @@ shinyServer(function(input, output, session) {
                                     cnt_location = input$cnt_location,
                                     cnt_matrix_features = opt_matrix_features[features_select],
                                     age_breaks_text     = input$age_breaks_text,
-                                    max_part_weight     = max_part_weight,
+                                    weight_threshold     = weight_threshold,
                                     bool_transmission_param = input$bool_transmission_param,
                                     age_susceptibility_text = age_susceptibility_text,
                                     age_infectiousness_text = age_infectiousness_text,
@@ -297,7 +297,7 @@ shinyServer(function(input, output, session) {
     output$project_website_data <- renderUI({
       tagList("More info on the social contact data initiative 
               and links to the ZENODO repositories are provided at", url,". Info about the Supplementary Professional Contacts 
-              (SPC) for the French dataset is provided ",url_doc_spc)
+              (SPC) for the French dataset ",url_doc_spc)
     })
     # add social contact data info
     output$social_contact_data <- renderDataTable({
@@ -308,12 +308,18 @@ shinyServer(function(input, output, session) {
       columnDefs = list(list(width = '170px', targets = 0))
     ))
     
+    # create url link
+    output$project_website_weights <- renderUI({
+      tagList('Based on the selected options, we calculate participant weights to account for age and the number of observations during week (5/7) and weekend (2/7) days. 
+                         The United Nation’s World Population Prospects are used as reference. Weights are constraint to a maximum of 3 to limit the influence of single participants.
+                         ',url_doc_weights)
+    })
     # add weights table
     output$table_weights <- renderDataTable({
-      if(any(is.null(out$weights))){
+      if(any(is.null(out$participants.weights))){
         data.table('No weights selected' = '')
       } else {
-        out$weights
+        out$participants.weights
       }
     },
     options = list(

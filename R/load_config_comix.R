@@ -1,7 +1,7 @@
 #___________________________________________________________________________
 # This file is part of the SOcial Contact RATES (SOCRATES) modelling project
 # 
-# => DEFINE COMIX OPTIONS 
+# => DEFINE USER INTERFACE AND MODELLING OPTIONS 
 #
 #  Copyright 2020, SIMID, UNIVERSITY OF ANTWERP & HASSELT UNIVERSITY
 #___________________________________________________________________________
@@ -12,12 +12,11 @@
 
 bool_is_comix_ui <- FALSE
 
+#__________________________________#
+##  CoMix-related updates       ####
+#__________________________________#
 
-#__________________________#
-##  UPDATE OPTIONS      ####
-#__________________________#
-
-# select comix countries
+# select countries
 select_ref <-  opt_country_admin$reference[opt_country_admin$bool_comix == bool_is_comix_ui]
 
 # update opt_country
@@ -33,8 +32,5 @@ if(bool_is_comix_ui){
   ui_title <- "SOCRATES CoMix"
   bool_selectInput_duration <- "false"
 }
-
-
-
 
 
